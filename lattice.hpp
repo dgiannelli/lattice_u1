@@ -206,26 +206,6 @@ inline int Lattice::idx(Link link) const
 
 // **** Local algorithm: ****
 
-#include <string>
-#include <pybind11/pybind11.h>
-
-namespace py = pybind11;
-
-class Simulation
-{
-    public:
-        Simulation(py::dict params)
-        {
-            keyword;
-        }
-
-    private:
-        //double beta;
-
-        //Lattice lat;
-        //mt19937 rng;
-}
-
 template <class URNG>
 double gauss_angle(double k, URNG &rng)
 {   
