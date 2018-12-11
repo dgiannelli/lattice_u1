@@ -28,7 +28,9 @@ class Simulation
             data_[py::cast("seed")] = py::cast(seed);
 
             stringstream rng_stream; rng_stream << rng;
-            data_[py::cast"rng_state"] = py::cast(rng_stream.str());
+            data_[py::cast("rng_state")] = py::cast(rng_stream.str());
+
+            data_[py::cast("config")] = py::cast(lat.config());
 
             data_[py::cast("energies")] = py::cast(energies);
             //data_[py::cast("energy_mean")] = py::cast(energy_mean);
@@ -81,6 +83,16 @@ class Simulation
             //if (!data.contains("L2")) L2=L1;
         }
 
+        void set_hot()
+        {
+            for (int mu : {1,2}) {
+                for (Site s : lat.sites()) {
+                    double theta = UniformDouble(0.,2.*pi)(rng);
+                    lat.set_link(Link{s,mu},exp(1i*theta));
+                }
+            }
+        }
+
         void run(int iters)
         {
             for (int i=0; i<iters; i++)
@@ -90,6 +102,7 @@ class Simulation
             }
             this->iters += iters;
         }
+
 
     private:
         Lattice lat;
@@ -103,6 +116,20 @@ class Simulation
 
         vector<double> local_accs;
         vector<double> cluster_accs;
+
+        template <class URNG>
+        double gauss_angle(double k)
+        {   
+            // y1 unif in [0,1], y2 unif in (0,1)
+            double y1 = (double)(rng()-rng.min())/(rng.max()-rng.min());
+            double y2 = (double)(rng()-rng.min()+1lu)
+                / (rng.max()-rng.min()+2lu);
+
+            double r = sqrt(-2./k*log(1.-y1*(1.-exp(-0.5*k*pi*pi))));
+            double theta = 2.*pi*(y2-0.5);
+
+            return r*cos(theta);
+        }
 };
 
 PYBIND11_MODULE(lattice, m)

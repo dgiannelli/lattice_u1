@@ -39,6 +39,30 @@ struct Link
     int mu;
 };
 
+using Staple = array<Link,3>;
+
+// nu is the first staple link direction
+Staple conn_staple(Link link, int nu)
+{
+    auto [s,mu] = link;
+    return Staple{Link{s+hat(mu),nu},
+                  Link{s+hat(mu)+hat(nu),-mu},
+                  Link{s+hat(nu),-nu}};
+}
+
+// The order of returned staples is not considered
+array<Staple,2> conn_staples(Link link)
+{
+    int nu;
+    switch (link.mu) {
+        case 1:; case -1: nu = 2; break;
+        case 2:; case -2: nu = 1; break;
+        default: throw runtime_error("Invalid mu");
+    }
+    return array<Staple,2>{conn_staple(link,nu),
+                           conn_staple(link,-nu)};
+}
+
 using Plaq = array<Link,4>;
 
 Plaq plaq_12(Site s)
@@ -49,6 +73,8 @@ Plaq plaq_12(Site s)
                 Link{s+hat(2),-2}};
 }
 
+using Staple = array<Link,3>;
+
 class Lattice
 {
     public:
@@ -58,6 +84,8 @@ class Lattice
         double beta() const {return beta_;}
         int L1() const {return L1_;}
         int L2() const {return L2_;}
+        const vector<double> &config() const {return link_vars;}
+        void set_config(const vector<double> &config) {link_vars=config;}
         
         /* Vector of all lattice sites.
            Useful for iterating over them: */
@@ -220,29 +248,6 @@ double gauss_angle(double k, URNG &rng)
     return r*cos(theta);
 }
  
-using Staple = array<Link,3>;
-
-// nu is the first staple link direction
-Staple conn_staple(Link link, int nu)
-{
-    auto [s,mu] = link;
-    return Staple{Link{s+hat(mu),nu},
-                  Link{s+hat(mu)+hat(nu),-mu},
-                  Link{s+hat(nu),-nu}};
-}
-
-// The order of returned staples is not considered
-array<Staple,2> conn_staples(Link link)
-{
-    int nu;
-    switch (link.mu) {
-        case 1:; case -1: nu = 2; break;
-        case 2:; case -2: nu = 1; break;
-        default: throw runtime_error("Invalid mu");
-    }
-    return array<Staple,2>{conn_staple(link,nu),
-                           conn_staple(link,-nu)};
-}
 
 template <class URNG>
 void set_hot(Lattice &lat, URNG &rng)
@@ -289,5 +294,4 @@ double local_sweep(Lattice &lat, URNG &rng)
     }
     return accept/lat.L1()/lat.L2()/2.;
 }
-
 
