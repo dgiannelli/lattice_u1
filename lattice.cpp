@@ -11,6 +11,7 @@ PYBIND11_MODULE(lattice, m)
         .def(py::init<double,int,int,int>())
         .def("data", &Simulation::data)
         .def("run", &Simulation::run)
+        .def("analysis", &Simulation::analysis)
         .def(py::pickle(
                 [](const Simulation &sim){return sim.data();},
                 [](const py::dict &data)

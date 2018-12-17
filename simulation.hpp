@@ -2,6 +2,9 @@
 
 #include <string>
 #include <sstream>
+#include <vector>
+#include <tuple>
+#include <algorithm>
 
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
@@ -17,13 +20,15 @@ class Simulation
             lat(beta,L1,L2),
             rng(seed),
             seed{seed}
-        {}
+        {
+            set_hot();
+        }
 
         py::dict data() const;
         void set_state(const py::dict &data);
 
-        void set_hot();
         void run(int iters);
+        void analysis();
 
     private:
         Lattice lat;
@@ -33,11 +38,18 @@ class Simulation
         int iters;
 
         vector<double> energies;
+        double energy_mean, energy_err;
+
         vector<double> charges;
+        double susc_mean, susc_err;
 
         vector<double> local_accs;
-        vector<double> cluster_accs;
+        double local_acc_mean, local_acc_err;
 
+        vector<double> cluster_accs;
+        double cluster_acc_mean, cluster_acc_err;
+
+        void set_hot();
         double gauss_angle(double k);
 
         // Return 1.0 if move is accepted, 0.0 if not
@@ -58,6 +70,7 @@ py::dict Simulation::data() const
     data_[py::cast("L1")] = py::cast(lat.L1());
     data_[py::cast("L2")] = py::cast(lat.L2());
 
+    data_[py::cast("iters")] = py::cast(iters);
     data_[py::cast("seed")] = py::cast(seed);
 
     stringstream rng_stream; rng_stream << rng;
@@ -66,18 +79,20 @@ py::dict Simulation::data() const
     data_[py::cast("config")] = py::cast(lat.config());
 
     data_[py::cast("energies")] = py::cast(energies);
-    //data_[py::cast("energy_mean")] = py::cast(energy_mean);
-    //data_[py::cast("energy_err")] = py::cast(energy_err);
+    data_[py::cast("energy_mean")] = py::cast(energy_mean);
+    data_[py::cast("energy_err")] = py::cast(energy_err);
 
-    data_[py::cast("charge")] = py::cast(charges);
-    //data_[py::cast("susc_mean")] = py::cast(susc_mean);
-    //data_[py::cast("susc_err")] = py::cast(susc_err);
+    data_[py::cast("charges")] = py::cast(charges);
+    data_[py::cast("susc_mean")] = py::cast(susc_mean);
+    data_[py::cast("susc_err")] = py::cast(susc_err);
 
     data_[py::cast("local_accs")] = py::cast(local_accs);
-    //data_[py::cast("local_acc_mean")] = py::cast(local_acc_mean);
-    //data_[py::cast("local_acc_err")] = py::cast(local_acc_err);
+    data_[py::cast("local_acc_mean")] = py::cast(local_acc_mean);
+    data_[py::cast("local_acc_err")] = py::cast(local_acc_err);
 
     data_[py::cast("cluster_accs")] = py::cast(cluster_accs);
+    data_[py::cast("cluster_acc_mean")] = py::cast(cluster_acc_mean);
+    data_[py::cast("cluster_acc_err")] = py::cast(cluster_acc_err);
 
     return data_;
 }
@@ -90,40 +105,20 @@ void Simulation::set_state(const py::dict &data)
     lat.set_config(data[py::cast("config")].cast<vector<double>>());
 
     energies = data[py::cast("energies")].cast<vector<double>>();
-    //energy_mean = data[py::cast("energy_mean")].cast<double>();
-    //energy_err = data[py::cast("energy_err")].cast<double>();
+    energy_mean = data[py::cast("energy_mean")].cast<double>();
+    energy_err = data[py::cast("energy_err")].cast<double>();
 
     charges = data[py::cast("charges")].cast<vector<double>>();
-    //charge_mean = data[py::cast("charge_mean")].cast<double>();
-    //charge_err = data[py::cast("charge_err")].cast<double>();
+    susc_mean = data[py::cast("susc_mean")].cast<double>();
+    susc_err = data[py::cast("susc_err")].cast<double>();
 
     local_accs = data[py::cast("local_accs")].cast<vector<double>>();
+    local_acc_mean = data[py::cast("local_acc_mean")].cast<double>();
+    local_acc_err = data[py::cast("local_acc_err")].cast<double>();
 
     cluster_accs = data[py::cast("cluster_accs")].cast<vector<double>>();
-
-    //for (auto [key,value] : data)
-    //{
-    //    string key_c = key.cast<string>();
-    //    if (key_c == "beta") beta = value.cast<double>();
-    //    else if (key_c == "L1") L1 = value.cast<int>();
-    //    else if (key_c == "L2") L2 = value.cast<int>();
-    //    else if (key_c == "get_energy") get_energy = value.cast<bool>();
-    //    else throw runtime_error("Invalid key: "+key_c);
-    //}
-
-    //if (!data.contains("beta")) throw runtime_error("Missing beta");
-    //if (!data.contains("L1")) throw runtime_error("Missing L1");
-    //if (!data.contains("L2")) L2=L1;
-}
-
-void Simulation::set_hot()
-{
-    for (int mu : {1,2}) {
-        for (Site s : lat.sites()) {
-            double theta = UniformDouble(0.,2.*pi)(rng);
-            lat.set_link(Link{s,mu},exp(1i*theta));
-        }
-    }
+    local_acc_mean = data[py::cast("cluster_acc_mean")].cast<double>();
+    local_acc_err = data[py::cast("cluster_acc_err")].cast<double>();
 }
 
 void Simulation::run(int iters)
@@ -136,6 +131,37 @@ void Simulation::run(int iters)
         charges.push_back(lat.total_charge());
     }
     this->iters += iters;
+}
+
+void Simulation::analysis()
+{
+    if (iters<1000) throw runtime_error("Too few iters");
+    py::object resampling = py::module::import("resampling");
+    py::object binning = resampling.attr("binning");
+    py::object tau_jack = resampling.attr("tau_jack");
+
+    tie(energy_mean,energy_err) = py::cast<tuple<double,double>>(binning(energies));
+
+    vector<double> susc(charges.size());
+    transform(charges.begin(),charges.end(),susc.begin(),
+              [&](double q){return q*q/lat.L1()/lat.L2()*lat.beta();});
+
+    tie(susc_mean,susc_err) = py::cast<tuple<double,double>>(binning(charges));
+
+    tie(local_acc_mean,local_acc_err) = py::cast<tuple<double,double>>(binning(local_accs));
+    tie(cluster_acc_mean,cluster_acc_err) = py::cast<tuple<double,double>>(binning(local_accs));
+}
+
+// Private methods:
+
+void Simulation::set_hot()
+{
+    for (int mu : {1,2}) {
+        for (Site s : lat.sites()) {
+            double theta = UniformDouble(0.,2.*pi)(rng);
+            lat.set_link(Link{s,mu},exp(1i*theta));
+        }
+    }
 }
 
 double Simulation::gauss_angle(double k)
