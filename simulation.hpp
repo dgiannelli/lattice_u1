@@ -188,7 +188,8 @@ class Cluster
         const Staple &istaple() const {return istaple_;};
         vector<Link> links() const;
     private:
-        int side;
+        int L1_cluster;
+        int L2_cluster
         Site corner;
 
         Link gate_;
@@ -197,21 +198,12 @@ class Cluster
 };
 
 template <class URNG>
-inline Cluster::Cluster(int N, int side, URNG &rng) :
-    side{side}
+inline Cluster::Cluster(int L1_cluster, int L2_cluster,
+                        Site corner, int offset) :
+    L1_cluster{L1_cluster},
+    L2_cluster{L2_cluster},
+    corner{corner}
 {
-    /* Select random corner,
-       starting path direction
-       and the path position of the gate */
-
-    int ran_pos = UniformInt(0,N*N-1)(rng);
-    int x1 = ran_pos/N; // unif in [0,N-1]
-    int x2 = ran_pos%N; // unif in [0,N-1]
-    corner = Site{x1,x2}; // lower left corner
-
-    int ran_muoff = UniformInt(0,2*4*side-1)(rng);
-    int mu = ran_muoff%2 + 1; // unif in [1,2]
-    int offset = ran_muoff/2; // unif in [0,4*side-1]
 
     // Build path
     int nu;
@@ -274,7 +266,22 @@ inline vector<Link> Cluster::links() const
 // Return 1.0 if move is accepted, 0.0 if not
 double gauss_cluster(int L1_cluster, int L2_cluster)
 {
-    Cluster cluster(lat.L1(),side,rng);
+    /* Select random cluster corner,
+       starting path direction
+       and the path position of the gate */
+
+    int L1 = lat.L1();
+    int L2 = lat.L2();
+    int ran_pos = UniformInt(0,L1*L2-1)(rng);
+    int x1 = ran_pos/L2; // unif in [0,L1-1]
+    int x2 = ran_pos%L2; // unif in [0,L2-1]
+    Site corner{x1,x2}; // lower left corner
+
+    int ran_muoff = UniformInt(0,2*(L1_cluster+L2_cluster)-1)(rng);
+    int mu = ran_muoff%2 + 1; // unif in [1,2]
+    int offset = ran_muoff/2; // unif in [0,2*(L1_cluster+L2_cluster)-1]
+
+    Cluster cluster(L1_cluster,L2_cluster,corner,mu,offset);
 
     auto path = cluster.path();
     auto link_it = path.rbegin();
@@ -313,3 +320,4 @@ double gauss_cluster(int L1_cluster, int L2_cluster)
     }
     else return 0.;
 }
+
