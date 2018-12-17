@@ -123,6 +123,11 @@ void Simulation::set_state(const py::dict &data)
 
 void Simulation::run(int iters)
 {
+    energy_mean = energy_err = 0.;
+    susc_mean = susc_err = 0.;
+    local_acc_mean = local_acc_err = 0.;
+    cluster_acc_mean = cluster_acc_err = 0.;
+
     for (int i=0; i<iters; i++)
     {
         local_accs.push_back(local_sweep());
