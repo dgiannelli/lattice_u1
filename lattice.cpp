@@ -1,18 +1,16 @@
 //#include <string>
 //#include <sstream>
 
-#include <pybind11/pybind11.h>
-
 #include "lattice.hpp"
 #include "simulation.hpp"
 
-namespace py = pybind11;
 
 PYBIND11_MODULE(lattice, m)
 {
     py::class_<Simulation>(m, "Simulation")
         .def(py::init<double,int,int,int>())
         .def("data", &Simulation::data)
+        .def("run", &Simulation::run)
         .def(py::pickle(
                 [](const Simulation &sim){return sim.data();},
                 [](const py::dict &data)

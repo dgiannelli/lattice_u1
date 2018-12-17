@@ -1,3 +1,5 @@
+#pragma once
+
 //#include <iostream>
 #include <vector>
 #include <array>
@@ -122,7 +124,7 @@ class Lattice
         int idx(Link) const;
 };
 
-inline Lattice::Lattice(double beta, int L1, int L2) :
+Lattice::Lattice(double beta, int L1, int L2) :
     beta_{beta}, L1_{L1}, L2_{L2}, link_vars(2*L1*L2,1.)
 {
     for (int x2=0; x2<L2; x2++) {
@@ -132,7 +134,7 @@ inline Lattice::Lattice(double beta, int L1, int L2) :
     }
 }
 
-inline double Lattice::energy() const
+double Lattice::energy() const
 {
     double sum = 0.;
     for (Site s : sites())
@@ -142,12 +144,12 @@ inline double Lattice::energy() const
     return beta()*sum/L1()/L2();
 }
 
-inline double Lattice::charge(Site s) const
+double Lattice::charge(Site s) const
 {
     return arg(s_line(plaq_12(s)))/2./pi;
 }
 
-inline double Lattice::total_charge() const
+double Lattice::total_charge() const
 {
     double sum = 0.;
     for (Site s : sites())
@@ -158,7 +160,7 @@ inline double Lattice::total_charge() const
 }
 
 template <>
-inline cmplx Lattice::s_line(Link link) const
+cmplx Lattice::s_line(Link link) const
 {
     cmplx u = exp(1i*link_vars[idx(link)]);
     if (link.mu>0) return u;
@@ -166,7 +168,7 @@ inline cmplx Lattice::s_line(Link link) const
 }
 
 template <class Path>
-inline cmplx Lattice::s_line(Path path) const
+cmplx Lattice::s_line(Path path) const
 {
     cmplx prod = 1.;
     for (auto link : path)
@@ -176,13 +178,13 @@ inline cmplx Lattice::s_line(Path path) const
     return prod;
 }
 
-inline void Lattice::set_link(Link link, cmplx u)
+void Lattice::set_link(Link link, cmplx u)
 {
     if (link.mu < 0) u = conj(u);
     link_vars[idx(link)] = arg(u);
 }
 
-inline void Lattice::local_gauge(Site s, cmplx G)
+void Lattice::local_gauge(Site s, cmplx G)
 {
     for (int mu : {1,2,-1,-2}) {
         Link link = Link{s,mu};
@@ -206,7 +208,7 @@ inline void Lattice::local_gauge(Site s, cmplx G)
    The successive axis is x2.
    Links pointing to direction x1 are first in the ordering,
    then the ones pointing to x2. */
-inline int Lattice::idx(Link link) const
+int Lattice::idx(Link link) const
 {
     auto [x1,x2] = link.s;
     

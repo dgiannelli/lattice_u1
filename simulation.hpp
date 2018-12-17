@@ -3,7 +3,12 @@
 #include <string>
 #include <sstream>
 
+#include <pybind11/pybind11.h>
+#include <pybind11/stl.h>
+
 #include "lattice.hpp"
+
+namespace py = pybind11;
 
 class Simulation
 {
@@ -18,7 +23,7 @@ class Simulation
         void set_state(const py::dict &data);
 
         void set_hot();
-        void run(int iters)
+        void run(int iters);
 
     private:
         Lattice lat;
@@ -33,7 +38,7 @@ class Simulation
         vector<double> local_accs;
         vector<double> cluster_accs;
 
-        double gauss_angle(double k) const;
+        double gauss_angle(double k);
 
         // Return 1.0 if move is accepted, 0.0 if not
         double local_update(Link link);
@@ -45,7 +50,7 @@ class Simulation
 		double gauss_cluster(int L1_cluster, int L2_cluster);
 };
 
-inline py::dict Simulation::data() const
+py::dict Simulation::data() const
 {
     py::dict data_;
 
@@ -77,7 +82,7 @@ inline py::dict Simulation::data() const
     return data_;
 }
 
-inline void Simulation::set_state(const py::dict &data)
+void Simulation::set_state(const py::dict &data)
 {
     iters = data[py::cast("iters")].cast<int>();
 
@@ -92,9 +97,9 @@ inline void Simulation::set_state(const py::dict &data)
     //charge_mean = data[py::cast("charge_mean")].cast<double>();
     //charge_err = data[py::cast("charge_err")].cast<double>();
 
-    sweep_acc = data[py::cast("local_accs")].cast<vector<double>>();
+    local_accs = data[py::cast("local_accs")].cast<vector<double>>();
 
-    cluster_acc = data[py::cast("cluster_accs")].cast<vector<double>>();
+    cluster_accs = data[py::cast("cluster_accs")].cast<vector<double>>();
 
     //for (auto [key,value] : data)
     //{
@@ -111,7 +116,7 @@ inline void Simulation::set_state(const py::dict &data)
     //if (!data.contains("L2")) L2=L1;
 }
 
-inline void Simulation::set_hot()
+void Simulation::set_hot()
 {
     for (int mu : {1,2}) {
         for (Site s : lat.sites()) {
@@ -121,17 +126,19 @@ inline void Simulation::set_hot()
     }
 }
 
-inline void Simulation::run(int iters)
+void Simulation::run(int iters)
 {
     for (int i=0; i<iters; i++)
     {
         local_accs.push_back(local_sweep());
-        cluster_accs.push_back(gauss_cluster());
+        cluster_accs.push_back(gauss_cluster((lat.L1()+1)/2,(lat.L2()+1)/2));
+        energies.push_back(lat.energy());
+        charges.push_back(lat.total_charge());
     }
     this->iters += iters;
 }
 
-inline double Simulation::gauss_angle(double k) const
+double Simulation::gauss_angle(double k)
 {   
     // y1 unif in [0,1], y2 unif in (0,1)
     double y1 = (double)(rng()-rng.min())/(rng.max()-rng.min());
@@ -144,7 +151,7 @@ inline double Simulation::gauss_angle(double k) const
     return r*cos(theta);
 }
 
-inline double Simulation::local_update(Link link)
+double Simulation::local_update(Link link)
 {
     auto [S_1,S_2] = conn_staples(link);
     
@@ -152,7 +159,7 @@ inline double Simulation::local_update(Link link)
     double k = lat.beta()*abs(W);
     double x_old = arg(W*lat.s_line(link));
     
-    double x_new = gauss_angle(k,rng);
+    double x_new = gauss_angle(k);
     
     double p = exp(k*(cos(x_new)+pow(x_new,2)/2.
                      -cos(x_old)-pow(x_old,2)/2.));
@@ -165,12 +172,12 @@ inline double Simulation::local_update(Link link)
     else return 0.;
 }
 
-inline double Simulation::local_sweep()
+double Simulation::local_sweep()
 {
     double accept = 0.;
     for (int mu : {1,2}) {
         for (Site s : lat.sites()) {
-            accept += local_update(lat,Link{s,mu},rng);
+            accept += local_update(Link{s,mu});
         }
     }
     return accept/lat.L1()/lat.L2()/2.;
@@ -179,8 +186,8 @@ inline double Simulation::local_sweep()
 class Cluster
 {   
     public:
-        template <class URNG>
-        Cluster(int N, int side, URNG&);
+        Cluster(int L1_cluster, int L2_cluster,
+                Site corner, int mu, int offset);
 
         Link gate() const {return gate_;};
         const vector<Link> &path() const {return path_;};
@@ -189,7 +196,7 @@ class Cluster
         vector<Link> links() const;
     private:
         int L1_cluster;
-        int L2_cluster
+        int L2_cluster;
         Site corner;
 
         Link gate_;
@@ -197,9 +204,8 @@ class Cluster
         Staple estaple_, istaple_;
 };
 
-template <class URNG>
-inline Cluster::Cluster(int L1_cluster, int L2_cluster,
-                        Site corner, int offset) :
+Cluster::Cluster(int L1_cluster, int L2_cluster,
+                        Site corner, int mu, int offset) :
     L1_cluster{L1_cluster},
     L2_cluster{L2_cluster},
     corner{corner}
@@ -207,17 +213,28 @@ inline Cluster::Cluster(int L1_cluster, int L2_cluster,
 
     // Build path
     int nu;
+    int L_mu, L_nu;
     switch (mu) {
-        case 1: nu = 2; break;
-        case 2: nu = 1; break;
+        case 1:
+            nu = 2;
+            L_mu = L1_cluster;
+            L_nu = L2_cluster;
+            break;
+        case 2:
+            nu = 1;
+            L_mu = L2_cluster;
+            L_nu = L1_cluster;
+            break;
         default: throw runtime_error("Invalid mu");
     }
 
     Site s = corner;
-    for (int rho : {mu,nu,-mu,-nu}) {
-        for (int i=0; i<side; i++) {
-            path_.push_back(Link{s,rho});
-            s = s + hat(rho);
+    array<int,4> dirs = {mu,nu,-mu,-nu};
+    array<int,4> sides = {L_mu,L_nu,L_mu,L_nu};
+    for (int i=0; i<4; i++) {
+        for (int j=0; j<sides[i]; j++) {
+            path_.push_back(Link{s,dirs[i]});
+            s = s + hat(dirs[i]);
         }
     }
 
@@ -227,13 +244,12 @@ inline Cluster::Cluster(int L1_cluster, int L2_cluster,
     
     // Identify staples
     int mu_e; // External direction
-    switch (offset/side) {
-        case 0: mu_e = -nu; break;
-        case 1: mu_e = mu; break;
-        case 2: mu_e = nu; break;
-        case 3: mu_e = -mu; break;
-        default: throw runtime_error("invalid mu");
-    }
+    if (offset<L_mu) mu_e = -nu;
+    else if (offset<L_mu+L_nu) mu_e = mu;
+    else if (offset<2*L_mu+L_nu) mu_e = nu;
+    else if (offset<2*(L_mu+L_nu)) mu_e = -mu;
+    else throw runtime_error("Invalid offset");
+
     estaple_ = conn_staple(gate_,mu_e);
     istaple_ = conn_staple(gate_,-mu_e);
 }
@@ -241,22 +257,22 @@ inline Cluster::Cluster(int L1_cluster, int L2_cluster,
 /* Select internal links.
    This function is lazily evaluated
    only if the inversion move is accepted */
-inline vector<Link> Cluster::links() const
+vector<Link> Cluster::links() const
 {
     vector<Link> vec;
 
     int x1, x2;
     x2 = corner.x2+1;
-    for (; x2<corner.x2+side; x2++) {
+    for (; x2<corner.x2+L2_cluster; x2++) {
         x1 = corner.x1;
-        for (; x1<corner.x1+side; x1++) {
+        for (; x1<corner.x1+L1_cluster; x1++) {
             vec.push_back(Link{Site{x1,x2},1});
         }
     }
     x2 = corner.x2;
-    for (; x2<corner.x2+side; x2++) {
+    for (; x2<corner.x2+L2_cluster; x2++) {
         x1 = corner.x1+1;
-        for (; x1<corner.x1+side; x1++) {
+        for (; x1<corner.x1+L1_cluster; x1++) {
             vec.push_back(Link{Site{x1,x2},2});
         }
     }
@@ -264,7 +280,7 @@ inline vector<Link> Cluster::links() const
 }
 
 // Return 1.0 if move is accepted, 0.0 if not
-double gauss_cluster(int L1_cluster, int L2_cluster)
+double Simulation::gauss_cluster(int L1_cluster, int L2_cluster)
 {
     /* Select random cluster corner,
        starting path direction
@@ -302,7 +318,7 @@ double gauss_cluster(int L1_cluster, int L2_cluster)
     cmplx u_old = lat.s_line(cluster.gate());
     double x_old = arg(W_old*u_old);
     
-    double x_new = gauss_angle(k_new,rng);
+    double x_new = gauss_angle(k_new);
     
     double p = exp(k_new*(cos(x_new)+pow(x_new,2.)/2.)
                   -k_old*(cos(x_old)+pow(x_old,2.)/2.))
