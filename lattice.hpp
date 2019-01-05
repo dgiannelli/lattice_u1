@@ -87,7 +87,7 @@ class Lattice
         int L1() const {return L1_;}
         int L2() const {return L2_;}
         const vector<double> &config() const {return link_vars;}
-        void set_config(const vector<double> &config) {link_vars=config;}
+        void config(const vector<double> &config) {link_vars=config;}
         
         /* Vector of all lattice sites.
            Useful for iterating over them: */
@@ -125,7 +125,7 @@ class Lattice
 };
 
 Lattice::Lattice(double beta, int L1, int L2) :
-    beta_{beta}, L1_{L1}, L2_{L2}, link_vars(2*L1*L2,1.)
+    beta_{beta}, L1_{L1}, L2_{L2}, link_vars(2*L1*L2,0.)
 {
     for (int x2=0; x2<L2; x2++) {
         for (int x1=0; x1<L1; x1++) {

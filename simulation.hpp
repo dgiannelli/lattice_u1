@@ -9,9 +9,14 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 
-#include "lattice.hpp"
+#include <highfive/H5File.hpp>
+#include <highfive/H5DataSet.hpp>
+#include <highfive/H5DataSpace.hpp>
+#include <highfive/H5Attribute.hpp>
 
+#include "lattice.hpp"
 namespace py = pybind11;
+namespace H5 = HighFive;
 
 class Simulation
 {
@@ -19,9 +24,85 @@ class Simulation
         Simulation(double beta, int L1, int L2, int seed) :
             lat(beta,L1,L2),
             rng(seed),
-            seed{seed}
+            file_name("data.h5")
         {
-            set_hot();
+            auto file = H5::File(file_name, H5::OpenOrCreate);
+
+            stringstream g_name_stream;
+            g_name_stream.precision(3);
+            g_name_stream << beta << '-' << L1 << '-' << L2 << '-' << seed;
+            group_name = g_name_stream.str();
+
+            if (file.exist(group_name))
+            {
+                auto group file.getGroup(group_name);
+                iters = group.getAttribute("iters");
+
+                auto config = lat.config();
+                group.getAttribute("config").read(config);
+                lat.config(config);
+
+                std::stringstream rng_state(group.getAttribute("rng_state"));
+                rng_state >> rng;
+
+                lat.config();
+
+                group.getAttribute("iters").read(iters);
+
+                group.getDataset("plaqs").read(plaqs);
+                group.getDataset("charges").read(charges);
+                group.getDataset("local_accs").read(local_accs);
+                group.getDataset("cluster_accs").read(cluster_accs);
+
+                group.getAttribute("energy_mean").read(energy_mean);
+                group.getAttribute("energy_err").read(energy_err);
+                group.getAttribute("susc_mean").read(susc_mean);
+                group.getAttribute("susc_err").read(susc_err);
+                group.getAttribute("local_acc_mean").read(local_acc_mean);
+                group.getAttribute("local_acc_err").read(local_acc_err);
+                group.getAttribute("cluster_acc_mean").read(cluster_acc_mean);
+                group.getAttribute("cluster_acc_err").read(cluster_acc_err);
+            }
+
+            else
+            {
+                auto group = file.groupCreate(g_name);
+                group.createAttribute<double>("beta",H5::DataSpace(1)).write(beta);
+                group.createAttribute<int>("L1",H5::DataSpace(1)).write(L1);
+                group.createAttribute<int>("L2",H5::DataSpace(1)).write(L2);
+                group.createAttribute<int>("seed",H5::DataSpace(1)).write(seed);
+
+                set_hot();
+
+                auto config = lat.config();
+                group.createAttribute<int>("config",H5::DataSpace::From(config)).write(config);
+
+                std::stringstream rng_state;
+                rng_state << rng;
+                auto rng_state_str = rng_state.str();
+                group.createAttribute<std::string>("rng_state",H5::DataSpace::From(rng_state_str))
+                     .write(rng_state_str);
+
+                iters = 0;
+                group.createAttribute<int>("iters",H5::DataSpace(1)).write(0);
+
+                auto dataspace = H5::DataSpace({0},{H5::DataSpace::UNLIMITED});
+                H5::DataSetCreateProps props;
+                props.add(H5::Chunking({int(1e7)}));
+                group.createDataSet<double>("plaqs",dataspace,props);
+                group.createDataSet<double>("charges",dataspace,props);
+                group.createDataSet<double>("local_accs",dataspace,props);
+                group.createDataSet<double>("cluster_accs",dataspace,props);
+
+                group.createAttribute<double>("energy_mean").write(0.);
+                group.createAttribute<double>("energy_err").write(0.);
+                group.createAttribute<double>("susc_mean").write(0.);
+                group.createAttribute<double>("susc_err").write(0.);
+                group.createAttribute<double>("local_acc_mean").write(0.);
+                group.createAttribute<double>("local_acc_err").write(0.);
+                group.createAttribute<double>("cluster_acc_mean").write(0.);
+                group.createAttribute<double>("cluster_acc_err").write(0.);
+            }
         }
 
         py::dict data() const;
@@ -34,7 +115,9 @@ class Simulation
         Lattice lat;
         mt19937 rng;
 
-        int seed;
+        string file_name;
+        string group_name;
+
         int iters;
 
         vector<double> energies;
