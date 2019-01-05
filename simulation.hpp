@@ -1,10 +1,13 @@
 #pragma once
 
+#include <iostream>
 #include <string>
 #include <sstream>
 #include <vector>
 #include <tuple>
 #include <algorithm>
+
+#include <experimental/filesystem>
 
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
@@ -15,110 +18,144 @@
 #include <highfive/H5Attribute.hpp>
 
 #include "lattice.hpp"
+
+using namespace std;
+using namespace std::experimental::filesystem;
 namespace py = pybind11;
 namespace H5 = HighFive;
 
 class Simulation
 {
     public:
-        Simulation(double beta, int L1, int L2, int seed) :
+        Simulation(double beta, int L1, int L2, int seed, int iters_new) :
             lat(beta,L1,L2),
-            rng(seed),
-            file_name("data.h5")
+            rng(seed)
         {
-            auto file = H5::File(file_name, H5::OpenOrCreate);
+            create_directory("data");
 
-            stringstream g_name_stream;
-            g_name_stream.precision(3);
-            g_name_stream << beta << '-' << L1 << '-' << L2 << '-' << seed;
-            group_name = g_name_stream.str();
+            stringstream filename_stream;
+            filename_stream.precision(3);
+            filename_stream << "data/" << beta << '_' << L1 << '_' 
+                            << L2 << '_' << seed << ".h5";
+            filename = filename_stream.str();
 
-            if (file.exist(group_name))
+            if (is_regular_file(filename))
             {
-                auto group file.getGroup(group_name);
-                iters = group.getAttribute("iters");
+                cout << "Restoring from file " << filename << endl;
+                auto file = H5::File(filename, H5::File::ReadWrite);
 
                 auto config = lat.config();
-                group.getAttribute("config").read(config);
+                file.getAttribute("config").read(config);
                 lat.config(config);
 
-                std::stringstream rng_state(group.getAttribute("rng_state"));
-                rng_state >> rng;
+                string rng_state;
+                file.getAttribute("rng_state").read(rng_state);
+                stringstream(rng_state) >> rng;
 
-                lat.config();
+                file.getAttribute("iters").read(iters_old);
 
-                group.getAttribute("iters").read(iters);
+                file.getDataset("energies").read(energies);
+                file.getAttribute("energy_mean").read(energy_mean);
+                file.getAttribute("energy_err").read(energy_err);
 
-                group.getDataset("plaqs").read(plaqs);
-                group.getDataset("charges").read(charges);
-                group.getDataset("local_accs").read(local_accs);
-                group.getDataset("cluster_accs").read(cluster_accs);
+                file.getDataset("charges").read(charges);
+                file.getAttribute("susc_mean").read(susc_mean);
+                file.getAttribute("susc_err").read(susc_err);
 
-                group.getAttribute("energy_mean").read(energy_mean);
-                group.getAttribute("energy_err").read(energy_err);
-                group.getAttribute("susc_mean").read(susc_mean);
-                group.getAttribute("susc_err").read(susc_err);
-                group.getAttribute("local_acc_mean").read(local_acc_mean);
-                group.getAttribute("local_acc_err").read(local_acc_err);
-                group.getAttribute("cluster_acc_mean").read(cluster_acc_mean);
-                group.getAttribute("cluster_acc_err").read(cluster_acc_err);
+                file.getDataset("local_accs").read(local_accs);
+                file.getAttribute("local_acc_mean").read(local_acc_mean);
+                file.getAttribute("local_acc_err").read(local_acc_err);
+
+                file.getDataset("cluster_accs").read(cluster_accs);
+                file.getAttribute("cluster_acc_mean").read(cluster_acc_mean);
+                file.getAttribute("cluster_acc_err").read(cluster_acc_err);
             }
 
             else
             {
-                auto group = file.groupCreate(g_name);
-                group.createAttribute<double>("beta",H5::DataSpace(1)).write(beta);
-                group.createAttribute<int>("L1",H5::DataSpace(1)).write(L1);
-                group.createAttribute<int>("L2",H5::DataSpace(1)).write(L2);
-                group.createAttribute<int>("seed",H5::DataSpace(1)).write(seed);
+                cout << "Creating new file " << filename << endl;
+                auto file = H5::File(filename, H5::File::Create);
+                file.createAttribute<double>("beta",H5::DataSpace(1)).write(beta);
+                file.createAttribute<int>("L1",H5::DataSpace(1)).write(L1);
+                file.createAttribute<int>("L2",H5::DataSpace(1)).write(L2);
+                file.createAttribute<int>("seed",H5::DataSpace(1)).write(seed);
 
                 set_hot();
 
                 auto config = lat.config();
                 group.createAttribute<int>("config",H5::DataSpace::From(config)).write(config);
 
-                std::stringstream rng_state;
-                rng_state << rng;
-                auto rng_state_str = rng_state.str();
-                group.createAttribute<std::string>("rng_state",H5::DataSpace::From(rng_state_str))
-                     .write(rng_state_str);
+                stringstream rng_state_stream;
+                rng_state_stream << rng;
+                auto rng_state = rng_state.str();
+                file.createAttribute<std::string>("rng_state",H5::DataSpace::From(rng_state))
+                     .write(rng_state);
 
-                iters = 0;
-                group.createAttribute<int>("iters",H5::DataSpace(1)).write(0);
+                file.createAttribute<int>("iters",H5::DataSpace(1)).write(0);
 
                 auto dataspace = H5::DataSpace({0},{H5::DataSpace::UNLIMITED});
                 H5::DataSetCreateProps props;
                 props.add(H5::Chunking({int(1e7)}));
-                group.createDataSet<double>("plaqs",dataspace,props);
-                group.createDataSet<double>("charges",dataspace,props);
-                group.createDataSet<double>("local_accs",dataspace,props);
-                group.createDataSet<double>("cluster_accs",dataspace,props);
 
-                group.createAttribute<double>("energy_mean").write(0.);
-                group.createAttribute<double>("energy_err").write(0.);
-                group.createAttribute<double>("susc_mean").write(0.);
-                group.createAttribute<double>("susc_err").write(0.);
-                group.createAttribute<double>("local_acc_mean").write(0.);
-                group.createAttribute<double>("local_acc_err").write(0.);
-                group.createAttribute<double>("cluster_acc_mean").write(0.);
-                group.createAttribute<double>("cluster_acc_err").write(0.);
+                file.createDataSet<double>("energies",dataspace,props);
+                file.createAttribute<double>("energy_mean").write(0.);
+                file.createAttribute<double>("energy_err").write(0.);
+
+                file.createDataSet<double>("charges",dataspace,props);
+                file.createAttribute<double>("susc_mean").write(0.);
+                file.createAttribute<double>("susc_err").write(0.);
+
+                file.createDataSet<double>("local_accs",dataspace,props);
+                file.createAttribute<double>("local_acc_mean").write(0.);
+                file.createAttribute<double>("local_acc_err").write(0.);
+
+                file.createDataSet<double>("cluster_accs",dataspace,props);
+                file.createAttribute<double>("cluster_acc_mean").write(0.);
+                file.createAttribute<double>("cluster_acc_err").write(0.);
             }
+
+            run(iters_new);
+            analysis();
+
+            auto file = H5::File(filename, H5::File::ReadWrite);
+
+            auto config = lat.config();
+            file.getAttribute("config").write(config);
+
+            stringstream rng_state_stream;
+            rng_state_stream << rng;
+            file.getAttribute("rng_state").write(rng_state.str());
+
+            file.getAttribute("iters").write(iters_new);
+
+            auto dataset = file.getDataset("energies");
+            dataset.resize({iters_new}); dataset.write(energies);
+            file.getAttribute("energy_mean").write(energy_mean);
+            file.getAttribute("energy_err").write(energy_err);
+
+            dataset = file.getDataset("charges").write(charges);
+            dataset.resize({iters_new}); dataset.write(charges);
+            file.getAttribute("susc_mean").write(susc_mean);
+            file.getAttribute("susc_err").write(susc_err);
+
+            dataset = file.getDataset("local_accs").write(local_accs);
+            dataset.resize({iters_new}); dataset.write(local_accs);
+            file.getAttribute("local_acc_mean").write(local_acc_mean);
+            file.getAttribute("local_acc_err").write(local_acc_err);
+
+            dataset = file.getDataset("cluster_accs").write(cluster_accs);
+            dataset.resize({iters_new}); dataset.write(cluster_accs);
+            file.getAttribute("cluster_acc_mean").write(cluster_acc_mean);
+            file.getAttribute("cluster_acc_err").write(cluster_acc_err);
         }
-
-        py::dict data() const;
-        void set_state(const py::dict &data);
-
-        void run(int iters);
-        void analysis();
 
     private:
         Lattice lat;
         mt19937 rng;
 
-        string file_name;
-        string group_name;
+        string filename;
 
-        int iters;
+        int iters_old;
 
         vector<double> energies;
         double energy_mean, energy_err;
@@ -132,7 +169,12 @@ class Simulation
         vector<double> cluster_accs;
         double cluster_acc_mean, cluster_acc_err;
 
+        void run(int iters);
+
+        void analysis();
+
         void set_hot();
+
         double gauss_angle(double k);
 
         // Return 1.0 if move is accepted, 0.0 if not
@@ -143,95 +185,40 @@ class Simulation
 
 		// Return 1.0 if move is accepted, 0.0 if not
 		double gauss_cluster(int L1_cluster, int L2_cluster);
+
 };
 
-py::dict Simulation::data() const
+void Simulation::run(int iters_new)
 {
-    py::dict data_;
-
-    data_[py::cast("beta")] = py::cast(lat.beta());
-    data_[py::cast("L1")] = py::cast(lat.L1());
-    data_[py::cast("L2")] = py::cast(lat.L2());
-
-    data_[py::cast("iters")] = py::cast(iters);
-    data_[py::cast("seed")] = py::cast(seed);
-
-    stringstream rng_stream; rng_stream << rng;
-    data_[py::cast("rng_state")] = py::cast(rng_stream.str());
-
-    data_[py::cast("config")] = py::cast(lat.config());
-
-    data_[py::cast("energies")] = py::cast(energies);
-    data_[py::cast("energy_mean")] = py::cast(energy_mean);
-    data_[py::cast("energy_err")] = py::cast(energy_err);
-
-    data_[py::cast("charges")] = py::cast(charges);
-    data_[py::cast("susc_mean")] = py::cast(susc_mean);
-    data_[py::cast("susc_err")] = py::cast(susc_err);
-
-    data_[py::cast("local_accs")] = py::cast(local_accs);
-    data_[py::cast("local_acc_mean")] = py::cast(local_acc_mean);
-    data_[py::cast("local_acc_err")] = py::cast(local_acc_err);
-
-    data_[py::cast("cluster_accs")] = py::cast(cluster_accs);
-    data_[py::cast("cluster_acc_mean")] = py::cast(cluster_acc_mean);
-    data_[py::cast("cluster_acc_err")] = py::cast(cluster_acc_err);
-
-    return data_;
-}
-
-void Simulation::set_state(const py::dict &data)
-{
-    iters = data[py::cast("iters")].cast<int>();
-
-    stringstream((data[py::cast("rng_state")].cast<string>())) >> rng;
-    lat.set_config(data[py::cast("config")].cast<vector<double>>());
-
-    energies = data[py::cast("energies")].cast<vector<double>>();
-    energy_mean = data[py::cast("energy_mean")].cast<double>();
-    energy_err = data[py::cast("energy_err")].cast<double>();
-
-    charges = data[py::cast("charges")].cast<vector<double>>();
-    susc_mean = data[py::cast("susc_mean")].cast<double>();
-    susc_err = data[py::cast("susc_err")].cast<double>();
-
-    local_accs = data[py::cast("local_accs")].cast<vector<double>>();
-    local_acc_mean = data[py::cast("local_acc_mean")].cast<double>();
-    local_acc_err = data[py::cast("local_acc_err")].cast<double>();
-
-    cluster_accs = data[py::cast("cluster_accs")].cast<vector<double>>();
-    local_acc_mean = data[py::cast("cluster_acc_mean")].cast<double>();
-    local_acc_err = data[py::cast("cluster_acc_err")].cast<double>();
-}
-
-void Simulation::run(int iters)
-{
-    energy_mean = energy_err = 0.;
-    susc_mean = susc_err = 0.;
-    local_acc_mean = local_acc_err = 0.;
-    cluster_acc_mean = cluster_acc_err = 0.;
-
-    for (int i=0; i<iters; i++)
+    int diff = iters_new - iters_old;
+    if (diff > 0)
     {
-        local_accs.push_back(local_sweep());
-        cluster_accs.push_back(gauss_cluster((lat.L1()+1)/2,(lat.L2()+1)/2));
-        energies.push_back(lat.energy());
-        charges.push_back(lat.total_charge());
+        for (int i=0; i<diff; i++)
+        {
+            local_accs.push_back(local_sweep());
+            cluster_accs.push_back(gauss_cluster((lat.L1()+1)/2,(lat.L2()+1)/2));
+            energies.push_back(lat.energy());
+            charges.push_back(lat.total_charge());
+        }
     }
-    this->iters += iters;
+
+    //energy_mean = energy_err = 0.;
+    //susc_mean = susc_err = 0.;
+    //local_acc_mean = local_acc_err = 0.;
+    //cluster_acc_mean = cluster_acc_err = 0.;
 }
 
 void Simulation::analysis()
 {
-    if (iters<1000) throw runtime_error("Too few iters");
+    if (iters_new<1000) throw runtime_error("Too few iters");
     py::object resampling = py::module::import("resampling");
     py::object binning = resampling.attr("binning");
-    py::object tau_jack = resampling.attr("tau_jack");
+    //py::object tau_jack = resampling.attr("tau_jack");
 
     tie(energy_mean,energy_err) = py::cast<tuple<double,double>>(binning(energies));
 
-    vector<double> susc(charges.size());
-    transform(charges.begin(),charges.end(),susc.begin(),
+    vector<double> suscs(charges.size());
+    transform(charges.begin(),charges.end(),suscs.begin(),
               [&](double q){return q*q/lat.L1()/lat.L2()*lat.beta();});
 
     tie(susc_mean,susc_err) = py::cast<tuple<double,double>>(binning(charges));
@@ -239,8 +226,6 @@ void Simulation::analysis()
     tie(local_acc_mean,local_acc_err) = py::cast<tuple<double,double>>(binning(local_accs));
     tie(cluster_acc_mean,cluster_acc_err) = py::cast<tuple<double,double>>(binning(local_accs));
 }
-
-// Private methods:
 
 void Simulation::set_hot()
 {
