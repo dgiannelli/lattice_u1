@@ -31,6 +31,7 @@ dependencies:
   - gtk2=2.24.31=h5baeb44_1000
   - gxx_impl_linux-64=7.3.0=hdf63c60_1
   - gxx_linux-64=7.3.0=h553295d_3
+  - h5py=2.9.0=py37h31fdc65_1000
   - harfbuzz=1.9.0=he243708_1001
   - hdf5=1.10.4=nompi_h11e915b_1105
   - highfive=2.0=h98b2bc3_1000
@@ -101,7 +102,7 @@ dependencies:
   - xorg-xproto=7.0.31=h14c3975_1007
   - xz=5.2.4=h14c3975_1001
   - zeromq=4.2.5=hf484d3e_1006
-  - zlib=1.2.11=h14c3975_1003
+  - zlib=1.2.11=h14c3975_1004
   - blas=1.0=mkl
   - defusedxml=0.5.0=py37_1
   - entrypoints=0.2.3=py37_2
@@ -125,5 +126,5 @@ dependencies:
   - terminado=0.8.1=py37_1
   - testpath=0.4.2=py37_0
   - traitlets=4.3.2=py37_0
-prefix: /users/tsp/giannelli/miniconda3/envs/cluster_u1
+prefix: /users/tsp/giannelli/miniconda3/envs/lattice_u1
 

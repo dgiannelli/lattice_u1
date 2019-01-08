@@ -27,18 +27,11 @@ namespace H5 = HighFive;
 class Simulation
 {
     public:
-        Simulation(double beta, int L1, int L2, int seed) :
+        Simulation(double beta, int L1, int L2, int seed, string filename) :
             lat(beta,L1,L2),
-            rng(seed)
+            rng(seed),
+            filename{filename}
         {
-            create_directory("data");
-
-            stringstream filename_stream;
-            filename_stream.precision(3);
-            filename_stream << "data/" << beta << '_' << L1 << '_' 
-                            << L2 << '_' << seed << ".h5";
-            filename = filename_stream.str();
-
             if (is_regular_file(filename))
             {
                 cout << "Restoring from file " << filename << endl;
@@ -75,10 +68,10 @@ class Simulation
             {
                 cout << "Creating new file " << filename << endl;
                 auto file = H5::File(filename, H5::File::Create);
-                file.createAttribute<double>("beta",H5::DataSpace(1)).write(beta);
-                file.createAttribute<int>("L1",H5::DataSpace(1)).write(L1);
-                file.createAttribute<int>("L2",H5::DataSpace(1)).write(L2);
-                file.createAttribute<int>("seed",H5::DataSpace(1)).write(seed);
+                file.createAttribute<double>("beta",H5::DataSpace(0)).write(beta);
+                file.createAttribute<int>("L1",H5::DataSpace(0)).write(L1);
+                file.createAttribute<int>("L2",H5::DataSpace(0)).write(L2);
+                file.createAttribute<int>("seed",H5::DataSpace(0)).write(seed);
 
                 set_hot();
 
@@ -91,27 +84,27 @@ class Simulation
                 file.createAttribute<std::string>("rng_state",H5::DataSpace::From(rng_state))
                      .write(rng_state);
 
-                file.createAttribute<int>("iters",H5::DataSpace(1)).write(0);
+                file.createAttribute<int>("iters",H5::DataSpace(0)).write(0);
 
                 auto dataspace = H5::DataSpace({0},{H5::DataSpace::UNLIMITED});
                 H5::DataSetCreateProps props;
                 props.add(H5::Chunking({int(1e7)}));
 
                 file.createDataSet<double>("energies",dataspace,props);
-                file.createAttribute<double>("energy_mean",H5::DataSpace(1)).write(0.);
-                file.createAttribute<double>("energy_err",H5::DataSpace(1)).write(0.);
+                file.createAttribute<double>("energy_mean",H5::DataSpace(0)).write(0.);
+                file.createAttribute<double>("energy_err",H5::DataSpace(0)).write(0.);
 
                 file.createDataSet<double>("charges",dataspace,props);
-                file.createAttribute<double>("susc_mean",H5::DataSpace(1)).write(0.);
-                file.createAttribute<double>("susc_err",H5::DataSpace(1)).write(0.);
+                file.createAttribute<double>("susc_mean",H5::DataSpace(0)).write(0.);
+                file.createAttribute<double>("susc_err",H5::DataSpace(0)).write(0.);
 
                 file.createDataSet<double>("local_accs",dataspace,props);
-                file.createAttribute<double>("local_acc_mean",H5::DataSpace(1)).write(0.);
-                file.createAttribute<double>("local_acc_err",H5::DataSpace(1)).write(0.);
+                file.createAttribute<double>("local_acc_mean",H5::DataSpace(0)).write(0.);
+                file.createAttribute<double>("local_acc_err",H5::DataSpace(0)).write(0.);
 
                 file.createDataSet<double>("cluster_accs",dataspace,props);
-                file.createAttribute<double>("cluster_acc_mean",H5::DataSpace(1)).write(0.);
-                file.createAttribute<double>("cluster_acc_err",H5::DataSpace(1)).write(0.);
+                file.createAttribute<double>("cluster_acc_mean",H5::DataSpace(0)).write(0.);
+                file.createAttribute<double>("cluster_acc_err",H5::DataSpace(0)).write(0.);
             }
         }
 
