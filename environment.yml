@@ -1,4 +1,4 @@
-name: cluster_u1
+name: lattice_u1
 channels:
   - conda-forge/label/gcc7
   - defaults
